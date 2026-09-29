@@ -1,60 +1,62 @@
-const STELLAR_TESTNET_EXPLORER = "https://stellar.expert/explorer/testnet";
-const STELLAR_PUBNET_EXPLORER = "https://stellar.expert/explorer/public";
+import { z } from 'zod';
+import { paymentLinkSchema, networkSchema, assetSchema, destinationSchema } from './schemas';
 
-export function resolveStellarExplorerUrl(network?: string): string {
-  if (!network) {
-    return STELLAR_TESTNET_EXPLORER;
-  }
-  const normalized = network.toLowerCase();
-  if (normalized.includes("test") || normalized.includes("testnet")) {
-    return STELLAR_TESTNET_EXPLORER;
-  }
-  if (
-    normalized.includes("pub") ||
-    normalized.includes("main") ||
-    normalized === "stellar:pubnet"
-  ) {
-    return STELLAR_PUBNET_EXPLORER;
-  }
-  return STELLAR_TESTNET_EXPLORER;
-}
-
-export function buildTransactionLink(txHash: string, network?: string): string {
-  const base = resolveStellarExplorerUrl(network);
-  return `${base}/tx/${txHash}`;
-}
-
-export function buildAccountLink(publicKey: string, network?: string): string {
-  const base = resolveStellarExplorerUrl(network);
-  return `${base}/account/${publicKey}`;
-}
-
-export interface PaymentProofLinks {
-  transaction: string | "not_available";
-  payer: string | "not_available";
-  payTo: string | "not_available";
+export type PaymentLinkInput = {
+  amount: string;
+  asset: string;
+  destination: string;
   network: string;
-  asset: string | "not_available";
-}
+  secret?: string;
+};
 
-export function buildPaymentProofLinks(input: {
-  transactionHash?: string;
-  payerPublicKey?: string;
-  payToAddress?: string;
-  network?: string;
-  asset?: string;
-}): PaymentProofLinks {
-  return {
-    transaction: input.transactionHash
-      ? buildTransactionLink(input.transactionHash, input.network)
-      : "not_available",
-    payer: input.payerPublicKey
-      ? buildAccountLink(input.payerPublicKey, input.network)
-      : "not_available",
-    payTo: input.payToAddress
-      ? buildAccountLink(input.payToAddress, input.network)
-      : "not_available",
-    network: input.network ?? "unknown",
-    asset: input.asset ?? "not_available"
+export type PaymentLinkOutput = {
+  url: string;
+  error?: never;
+} | {
+  url?: never;
+  error: string;
+};
+
+/**
+ * Generates a payment link only if inputs validate against the shared schema.
+ * Rejects zero amounts, non-integer amounts, and missing destinations.
+ * Never includes secrets in errors.
+ */
+export function buildPaymentLink(input: PaymentLinkInput): PaymentLinkOutput {
+  // Validate amount: must be a non-zero integer (as string to avoid floating point)
+  const amountValidation = z
+    .string()
+    .regex(/^[1-9]\d*$/, 'Amount must be a positive integer')
+    .safeParse(input.amount);
+
+  if (!amountValidation.success) {
+    return { error: 'Invalid amount' };
+  }
+
+  // Validate network, asset, and destination against shared schemas
+  const networkValidation = networkSchema.safeParse(input.network);
+  const assetValidation = assetSchema.safeParse(input.asset);
+  const destinationValidation = destinationSchema.safeParse(input.destination);
+
+  if (!networkValidation.success || !assetValidation.success || !destinationValidation.success) {
+    return { error: 'Invalid parameters' };
+  }
+
+  // Construct and validate the full payment link payload
+  const linkPayload = {
+    amount: amountValidation.data,
+    asset: assetValidation.data,
+    destination: destinationValidation.data,
+    network: networkValidation.data,
   };
+
+  const validation = paymentLinkSchema.safeParse(linkPayload);
+  if (!validation.success) {
+    return { error: 'Payment link validation failed' };
+  }
+
+  // Construct the URL (example format - adjust to actual implementation)
+  const url = `https://pay.example.com/?amount=${linkPayload.amount}&asset=${linkPayload.asset}&destination=${linkPayload.destination}&network=${linkPayload.network}`;
+
+  return { url };
 }
