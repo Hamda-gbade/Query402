@@ -54,6 +54,7 @@ export async function executeQuery(params: {
   provider: string;
   q?: string;
   url?: string;
+  paymentReference?: string;
 }): Promise<QueryResult> {
   const providerDef = getProviderById(params.provider);
   if (!providerDef) {
@@ -67,9 +68,18 @@ export async function executeQuery(params: {
 
   const safeInput = params.mode === "scrape" ? await validateScrapeUrl(queryOrUrl) : queryOrUrl;
 
+  // Build context for paid query providers (news and search)
+  const context =
+    params.mode === "news" || params.mode === "search"
+      ? {
+          paymentReference: params.paymentReference ?? "",
+          safetyPassed: true // news/search queries don't require URL safety validation
+        }
+      : undefined;
+
   let execution;
   try {
-    execution = await registry.execute(params.mode, params.provider, safeInput);
+    execution = await registry.execute(params.mode, params.provider, safeInput, context);
   } catch (error) {
     logger.error(
       {

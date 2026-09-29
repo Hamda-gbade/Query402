@@ -1,4 +1,4 @@
-import { ProviderAdapter, ProviderRegistry, AdapterExecutionResult } from "./core.js";
+import { ProviderAdapter, ProviderRegistry, AdapterExecutionResult, PaidQueryContext } from "./core.js";
 import { getProviderById } from "../lib/pricing.js";
 import type {
   CircuitBreakerState,
@@ -88,7 +88,8 @@ export class DefaultProviderRegistry implements ProviderRegistry {
   async execute(
     mode: "search" | "news" | "scrape",
     providerId: string,
-    queryOrUrl: string
+    queryOrUrl: string,
+    context?: PaidQueryContext
   ): Promise<AdapterExecutionResult> {
     const startedAt = Date.now();
     const providerDef = getProviderById(providerId);
@@ -137,7 +138,7 @@ export class DefaultProviderRegistry implements ProviderRegistry {
       }
       // Fallback to executing it directly if no getFallback is provided
       try {
-        const items = await adapter.execute(queryOrUrl);
+        const items = await adapter.execute(queryOrUrl, context);
         return buildResult(items, "deterministic-fallback", {
           fallbackReason: "deterministic-provider"
         });
@@ -163,7 +164,7 @@ export class DefaultProviderRegistry implements ProviderRegistry {
     }
 
     try {
-      const items = await circuit.executeWithTimeout(adapter.execute(queryOrUrl));
+      const items = await circuit.executeWithTimeout(adapter.execute(queryOrUrl, context));
       circuit.recordSuccess();
       return buildResult(items, "live", {
         circuitBreakerState: circuit.getState()
