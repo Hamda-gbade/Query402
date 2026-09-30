@@ -114,6 +114,16 @@ export function acquireIdempotencyLock(
         };
       }
 
+      // In-flight lock: refresh the TTL instead of letting the record expire,
+      // so a slow request cannot be taken over and executed twice.
+      const refreshedExpiry = new Date(Date.now() + ttl * 1000).toISOString();
+      database
+        .prepare(
+          `UPDATE idempotency_keys
+           SET expires_at = ?
+           WHERE key = ? AND status_code = ?`
+        )
+        .run(refreshedExpiry, key, PENDING_STATUS_CODE);
       return { state: "in_progress" };
     }
   }
