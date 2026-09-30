@@ -1,3 +1,7 @@
+import {
+  runProviderAfterConfirmation,
+  type FacilitatorPaymentResult
+} from "../lib/facilitator-check.js";
 import { getProviderById, providers, validateProviderCatalog } from "../lib/pricing.js";
 import { registry } from "../providers/index.js";
 import { nanoid } from "nanoid";
@@ -49,7 +53,27 @@ export class ProviderFailedError extends Error {
   }
 }
 
-export async function executeQuery(params: {
+export async function executeQuery(
+  params: {
+    mode: "search" | "news" | "scrape";
+    provider: string;
+    q?: string;
+    url?: string;
+  },
+  options?: { facilitatorResult: FacilitatorPaymentResult | null }
+): Promise<QueryResult> {
+  if (options) {
+    return runProviderAfterConfirmation({
+      providerId: params.provider,
+      facilitatorResult: options.facilitatorResult,
+      run: () => executeQueryBody(params)
+    });
+  }
+
+  return executeQueryBody(params);
+}
+
+async function executeQueryBody(params: {
   mode: "search" | "news" | "scrape";
   provider: string;
   q?: string;
