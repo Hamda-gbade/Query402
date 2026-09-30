@@ -1,6 +1,10 @@
 import type { Query402Receipt, QueryMode } from "@query402/shared";
-import { query402ReceiptSchema } from "@query402/shared";
-import { DEFAULT_TIMESTAMP_MAX_AGE_MS, isFreshTimestamp } from "@query402/shared";
+import {
+  query402ReceiptSchema,
+  DEFAULT_TIMESTAMP_MAX_AGE_MS,
+  isFreshTimestamp,
+  isExpiredTimestamp
+} from "@query402/shared";
 import type { PaidQueryResponse, PublicPaymentEvidence } from "../types.js";
 
 /**
@@ -18,6 +22,8 @@ export interface BuildReceiptInput {
   userPaymentMode: "wallet" | "sponsored";
   /** Optional override for the generation timestamp (used by tests). */
   generatedAt?: Date;
+  /** Optional clock override for freshness checks (used by tests). */
+  now?: Date | number;
 }
 
 function normalizeStatus(
@@ -74,6 +80,10 @@ export function buildReceipt(input: BuildReceiptInput): Query402Receipt {
   const transactionHash = evidence?.transactionHash ?? null;
   const network = evidence?.network ?? response.payment?.network ?? null;
   const paymentMode: ReceiptPaymentMode = kind === "demo" ? "demo" : userPaymentMode;
+  const now = input.now ?? new Date();
+  const proofTimestamp = response.result.timestamp;
+  const expired = isExpiredTimestamp(proofTimestamp, now);
+  const paidStatus = expired ? null : status;
 
   return {
     schema: RECEIPT_SCHEMA,
@@ -86,7 +96,7 @@ export function buildReceipt(input: BuildReceiptInput): Query402Receipt {
     resultTimestamp: response.result.timestamp,
     payment: {
       mode: paymentMode,
-      status,
+      status: paidStatus,
       evidenceKind: kind,
       transactionHash,
       network
@@ -139,7 +149,7 @@ export async function copyReceiptToClipboard(receipt: Query402Receipt): Promise<
 
 /**
  * Trigger a JSON file download for the receipt. SSR/no-DOM callers can no-op
- * via `typeof document === "undefined"`.
+ * via `typeof document === "undefined" `.
  */
 export function downloadReceipt(
   receipt: Query402Receipt,
