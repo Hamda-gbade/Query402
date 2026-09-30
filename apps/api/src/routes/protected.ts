@@ -4,6 +4,8 @@ import { executeQuery } from "../services/query-service.js";
 import { handlePaidX402Route } from "../lib/idempotency/x402.js";
 import { config } from "../lib/config.js";
 import { savePaymentAttempt, saveUsageEvent, getDetailedAnalyticsData } from "../lib/persistence.js";
+import { getPaymentEvidence } from "../lib/payment-evidence.js";
+import { handlePaidX402Route } from "../lib/idempotency/x402.js";
 
 export const protectedRouter = Router();
 
@@ -19,6 +21,14 @@ protectedRouter.get("/x402/search", async (req, res, next) => {
     return res.status(400).json({ error: parsed.error.flatten(), errorCode: "invalid_query" });
   }
 
+  const evidence = getPaymentEvidence(req);
+  const paymentReference =
+    evidence?.kind === "settled" && evidence.transactionHash
+      ? evidence.transactionHash
+      : evidence?.kind === "demo"
+        ? `demo:${req.path}:${parsed.data.provider}:${evidence.payer ?? "demo-agent"}`
+        : undefined;
+
   return handlePaidX402Route(req, res, next, {
     mode: "search",
     route: "/x402/search",
@@ -29,7 +39,8 @@ protectedRouter.get("/x402/search", async (req, res, next) => {
       executeQuery({
         mode: "search",
         provider: parsed.data.provider,
-        q: parsed.data.q
+        q: parsed.data.q,
+        paymentReference
       })
   });
 });
@@ -39,6 +50,14 @@ protectedRouter.get("/x402/news", async (req, res, next) => {
   if (!parsed.success) {
     return res.status(400).json({ error: parsed.error.flatten(), errorCode: "invalid_query" });
   }
+
+  const evidence = getPaymentEvidence(req);
+  const paymentReference =
+    evidence?.kind === "settled" && evidence.transactionHash
+      ? evidence.transactionHash
+      : evidence?.kind === "demo"
+        ? `demo:${req.path}:${parsed.data.provider}:${evidence.payer ?? "demo-agent"}`
+        : undefined;
 
   return handlePaidX402Route(req, res, next, {
     mode: "news",
@@ -50,7 +69,8 @@ protectedRouter.get("/x402/news", async (req, res, next) => {
       executeQuery({
         mode: "news",
         provider: parsed.data.provider,
-        q: parsed.data.q
+        q: parsed.data.q,
+        paymentReference
       })
   });
 });
