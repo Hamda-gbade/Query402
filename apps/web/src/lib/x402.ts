@@ -14,14 +14,21 @@ const stellarRpcUrl =
 function createMachineSigner(
   wallet: import("./wallet/index.js").WalletSessionMachine
 ): ClientStellarSigner {
+  const networkPassphrase = wallet.getTargetNetworkPassphrase();
   return {
     address: wallet.getState().address!,
     signAuthEntry: async (authEntryXdr, opts) => {
-      const res = await wallet.signAuthEntry(authEntryXdr, opts);
+      const res = await wallet.signAuthEntry(authEntryXdr, {
+        ...opts,
+        networkPassphrase: opts?.networkPassphrase ?? networkPassphrase
+      });
       return res;
     },
     signTransaction: async (transactionXdr, opts) => {
-      const res = await wallet.signTransaction(transactionXdr, opts);
+      const res = await wallet.signTransaction(transactionXdr, {
+        ...opts,
+        networkPassphrase: opts?.networkPassphrase ?? networkPassphrase
+      });
       return res;
     }
   };

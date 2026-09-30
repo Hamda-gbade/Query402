@@ -1,11 +1,13 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { ProviderDefinition, QueryMode, SponsorshipPreview } from "@query402/shared";
 import {
   Activity,
+  AlertCircle,
   AlertTriangle,
   Check,
   CheckCircle2,
   CircleDollarSign,
+  Clock,
   Clock4,
   Copy,
   Download,
@@ -16,15 +18,19 @@ import {
   ShieldCheck,
   Sparkles,
   TerminalSquare,
-  Check,
-  Clock,
-  Copy,
+  TrendingUp,
   XCircle
 } from "lucide-react";
 import { Link } from "react-router-dom";
-import type { AnalyticsResponse, EvidenceCheckItem, PaidQueryResponse } from "../types.js";
+import type {
+  AnalyticsResponse,
+  EvidenceCheckItem,
+  PaidQueryResponse,
+  PrivacySafeAnalyticsResponse
+} from "../types.js";
 import { API_BASE_URL, fetchHealth, fetchJson, money } from "../lib/api.js";
 import {
+  BudgetGate,
   fetchSponsorshipEnabled,
   fetchSponsorshipPreview,
   runSponsoredPaidQuery
@@ -91,7 +97,10 @@ function PayToAddressDisplay({
   if (!configured || !address) {
     return (
       <span className="pay-to-warning-badge" title="No payout address configured!">
-        <AlertTriangle size={13} style={{ display: "inline-block", marginRight: "4px", verticalAlign: "-2px" }} />
+        <AlertTriangle
+          size={13}
+          style={{ display: "inline-block", marginRight: "4px", verticalAlign: "-2px" }}
+        />
         Missing pay-to address
       </span>
     );
@@ -139,15 +148,23 @@ export default function ControlDeckPage() {
   const [selectedProvider, setSelectedProvider] = useState<string>(modeDefaultProvider.search);
   const [result, setResult] = useState<PaidQueryResponse | null>(null);
   const [analytics, setAnalytics] = useState<AnalyticsResponse | null>(null);
-  const [privacySafeAnalytics, setPrivacySafeAnalytics] = useState<PrivacySafeAnalyticsResponse | null>(null);
+  const [privacySafeAnalytics, setPrivacySafeAnalytics] =
+    useState<PrivacySafeAnalyticsResponse | null>(null);
+  const [isAnalyticsLoading, setIsAnalyticsLoading] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [sponsorshipEnabled, setSponsorshipEnabled] = useState(false);
-  const [healthDiagnostics, setHealthDiagnostics] = useState<{ network?: string; payToConfigured?: boolean; payToAddress?: string } | null>(null);
+  const [healthDiagnostics, setHealthDiagnostics] = useState<{
+    network?: string;
+    payToConfigured?: boolean;
+    payToAddress?: string;
+  } | null>(null);
   const [preview, setPreview] = useState<SponsorshipPreview | null>(null);
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [isPreviewLoading, setIsPreviewLoading] = useState(false);
   const [demoMode, setDemoMode] = useState(false);
+  const budgetGateRef = useRef(new BudgetGate());
+  const [budgetGateDecision, setBudgetGateDecision] = useState(() => budgetGateRef.current.decision);
 
   const modeProviders = useMemo(
     () => providers.filter((provider) => provider.category === mode && provider.enabled),
@@ -249,20 +266,28 @@ export default function ControlDeckPage() {
   }
 
   async function refreshMetrics() {
-    const data = await fetchJson<AnalyticsResponse>(`${API_BASE_URL}/api/analytics`);
-    setAnalytics(data);
-
-    // Fetch privacy-safe analytics
+    setIsAnalyticsLoading(true);
     try {
-      const privacySafeData = await fetchJson<PrivacySafeAnalyticsResponse>(`${API_BASE_URL}/api/v1/analytics?limit=5`);
-      setPrivacySafeAnalytics(privacySafeData);
-    } catch (analyticsError) {
-      // Silently fail to fetch privacy-safe analytics if endpoint not available
-      console.warn("Could not fetch privacy-safe analytics", analyticsError);
+      const data = await fetchJson<AnalyticsResponse>(`${API_BASE_URL}/api/analytics`);
+      setAnalytics(data);
+
+      // Fetch privacy-safe analytics
+      try {
+        const privacySafeData = await fetchJson<PrivacySafeAnalyticsResponse>(
+          `${API_BASE_URL}/api/v1/analytics?limit=5`
+        );
+        setPrivacySafeAnalytics(privacySafeData);
+      } catch (analyticsError) {
+        // Silently fail to fetch privacy-safe analytics if endpoint not available
+        console.warn("Could not fetch privacy-safe analytics", analyticsError);
+      }
+    } finally {
+      setIsAnalyticsLoading(false);
     }
   }
 
-  const showAnalyticsSkeleton = isAnalyticsLoading && analytics === null;
+  const showAnalyticsSkeleton =
+    isAnalyticsLoading && analytics === null && privacySafeAnalytics === null;
   const hasUsageHistory = (analytics?.totalQueries ?? 0) > 0;
 
   type ReceiptFeedback = { kind: "copied" | "downloaded"; at: number } | null;
@@ -292,9 +317,7 @@ export default function ControlDeckPage() {
       downloadReceipt(receipt);
       setReceiptFeedback({ kind: "downloaded", at: Date.now() });
     } catch (exportError) {
-      setError(
-        exportError instanceof Error ? exportError.message : "Failed to export receipt"
-      );
+      setError(exportError instanceof Error ? exportError.message : "Failed to export receipt");
     }
   }
 
@@ -372,16 +395,20 @@ export default function ControlDeckPage() {
 
   // Preview the sponsorship grant status whenever the sponsored path is active
   // and the relevant inputs change. Aborts in-flight requests so rapid toggling
-  // of mode/provider does not surface stale state.
+  // of mode/provider does not surface stale state. The BudgetGate additionally
+  // guards against a late response for an older budget re-enabling the actions.
   useEffect(() => {
     if (paymentMode !== "sponsored" || !walletConnected || !sponsorshipEnabled) {
       setPreview(null);
       setPreviewError(null);
       setIsPreviewLoading(false);
+      budgetGateRef.current.reset();
+      setBudgetGateDecision(budgetGateRef.current.decision);
       return;
     }
 
     const controller = new AbortController();
+    const requestId = budgetGateRef.current.beginRequest();
     setIsPreviewLoading(true);
     setPreviewError(null);
 
@@ -395,6 +422,8 @@ export default function ControlDeckPage() {
       .then((result) => {
         if (!controller.signal.aborted) {
           setPreview(result);
+          budgetGateRef.current.applyResponse(requestId, result);
+          setBudgetGateDecision(budgetGateRef.current.decision);
         }
       })
       .catch((err: unknown) => {
@@ -402,10 +431,12 @@ export default function ControlDeckPage() {
           return;
         }
         setPreview(null);
-        if (err instanceof Error && err.name === "AbortError") {
-          return;
-        }
-        setPreviewError(err instanceof Error ? err.message : "Grant preview unavailable");
+        const reason = err instanceof Error && err.name !== "AbortError"
+          ? err.message
+          : "Grant preview unavailable";
+        setPreviewError(reason);
+        budgetGateRef.current.applyError(requestId, reason);
+        setBudgetGateDecision(budgetGateRef.current.decision);
       })
       .finally(() => {
         if (!controller.signal.aborted) {
@@ -598,7 +629,7 @@ export default function ControlDeckPage() {
                   paymentMode === "sponsored" ? "payment-mode-btn active" : "payment-mode-btn"
                 }
                 onClick={() => setPaymentMode("sponsored")}
-                disabled={!walletConnected || !sponsorshipEnabled}
+                disabled={!walletConnected || !sponsorshipEnabled || !budgetGateDecision.allowed}
               >
                 Sponsored tx
               </button>
@@ -754,13 +785,19 @@ export default function ControlDeckPage() {
                 isLoading ||
                 walletState.status === "signing" ||
                 !selectedProviderDetails ||
-                !walletConnected
+                !walletConnected ||
+                (paymentMode === "sponsored" && !budgetGateDecision.allowed)
               }
               type="button"
             >
               {isLoading || walletState.status === "signing" ? "Executing..." : "Run paid query"}
               <TerminalSquare size={16} />
             </button>
+            {paymentMode === "sponsored" && !budgetGateDecision.allowed && budgetGateDecision.reason ? (
+              <p className="error-box" data-testid="budget-gate-reason">
+                {budgetGateDecision.reason}
+              </p>
+            ) : null}
           </div>
 
           {paymentMode === "sponsored" && walletConnected && sponsorshipEnabled ? (
@@ -792,7 +829,7 @@ export default function ControlDeckPage() {
               <p className="empty-note">Waiting for results. Start a query from the left panel.</p>
             ) : (
               <>
-                <PaymentEvidenceBanner payment={result.payment} />
+                <PaymentEvidenceBanner payment={result.payment} receipt={receipt} />
 
                 <div className="result-meta">
                   <span>{result.result.providerName}</span>
@@ -811,7 +848,8 @@ export default function ControlDeckPage() {
 
                 <div className="trace-box">
                   <p>
-                    payment-evidence: {result.payment.evidence.kind} ({result.payment.evidence.status})
+                    payment-evidence: {result.payment.evidence.kind} (
+                    {result.payment.evidence.status})
                   </p>
                   <p>network: {result.payment.evidence.network}</p>
                   <p>asset: {result.payment.evidence.asset ?? "<unspecified>"}</p>
@@ -827,10 +865,7 @@ export default function ControlDeckPage() {
                         </span>
                       ) : null}
                       {receipt?.payment.transactionHash ? (
-                        <span
-                          className="receipt-tx-pill"
-                          title={receipt.payment.transactionHash}
-                        >
+                        <span className="receipt-tx-pill" title={receipt.payment.transactionHash}>
                           tx {receipt.payment.transactionHash.slice(0, 8)}…
                         </span>
                       ) : null}
@@ -852,9 +887,7 @@ export default function ControlDeckPage() {
                       onClick={exportReceipt}
                       disabled={!receipt}
                       title={
-                        receipt
-                          ? `Download ${receiptFilename(receipt)}`
-                          : "Run a paid query first"
+                        receipt ? `Download ${receiptFilename(receipt)}` : "Run a paid query first"
                       }
                     >
                       <Download size={14} /> Export JSON receipt
@@ -913,7 +946,7 @@ export default function ControlDeckPage() {
               <h3>
                 <TrendingUp size={16} /> On-Chain Analytics (Privacy-Safe)
               </h3>
-              
+
               {/* Settled Volume */}
               <div className="settlement-group">
                 <div className="settlement-header">
@@ -923,7 +956,9 @@ export default function ControlDeckPage() {
                 <ul>
                   <li>
                     <span>Volume</span>
-                    <strong>${privacySafeAnalytics.aggregation.settled.totalVolumeUsd.toFixed(6)}</strong>
+                    <strong>
+                      ${privacySafeAnalytics.aggregation.settled.totalVolumeUsd.toFixed(6)}
+                    </strong>
                   </li>
                   <li>
                     <span>Queries</span>
@@ -931,15 +966,30 @@ export default function ControlDeckPage() {
                   </li>
                   <li className="category-item">
                     <span>Search</span>
-                    <strong>${privacySafeAnalytics.aggregation.settled.byCategory.search.volumeUsd.toFixed(6)}</strong>
+                    <strong>
+                      $
+                      {privacySafeAnalytics.aggregation.settled.byCategory.search.volumeUsd.toFixed(
+                        6
+                      )}
+                    </strong>
                   </li>
                   <li className="category-item">
                     <span>News</span>
-                    <strong>${privacySafeAnalytics.aggregation.settled.byCategory.news.volumeUsd.toFixed(6)}</strong>
+                    <strong>
+                      $
+                      {privacySafeAnalytics.aggregation.settled.byCategory.news.volumeUsd.toFixed(
+                        6
+                      )}
+                    </strong>
                   </li>
                   <li className="category-item">
                     <span>Scrape</span>
-                    <strong>${privacySafeAnalytics.aggregation.settled.byCategory.scrape.volumeUsd.toFixed(6)}</strong>
+                    <strong>
+                      $
+                      {privacySafeAnalytics.aggregation.settled.byCategory.scrape.volumeUsd.toFixed(
+                        6
+                      )}
+                    </strong>
                   </li>
                 </ul>
               </div>
@@ -954,7 +1004,9 @@ export default function ControlDeckPage() {
                   <ul>
                     <li>
                       <span>Volume</span>
-                      <strong>${privacySafeAnalytics.aggregation.verified.totalVolumeUsd.toFixed(6)}</strong>
+                      <strong>
+                        ${privacySafeAnalytics.aggregation.verified.totalVolumeUsd.toFixed(6)}
+                      </strong>
                     </li>
                     <li>
                       <span>Queries</span>
@@ -998,7 +1050,9 @@ export default function ControlDeckPage() {
                 </div>
               )}
 
-              <p className="privacy-notice">✓ Query text and URLs redacted. Payer addresses hashed. Raw payments never exposed.</p>
+              <p className="privacy-notice">
+                ✓ Query text and URLs redacted. Payer addresses hashed. Raw payments never exposed.
+              </p>
             </div>
           )}
 
