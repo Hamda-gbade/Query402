@@ -1,5 +1,6 @@
 export {
   DEFAULT_TIMESTAMP_MAX_AGE_MS,
+  isExpiredTimestamp,
   isFreshTimestamp,
   isStaleTimestamp,
   parseTimestamp
