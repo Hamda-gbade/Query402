@@ -1,9 +1,12 @@
 import { x402Client, x402HTTPClient } from "@x402/core/client";
+import type { PaymentRequired } from "@x402/core/types";
+import { decodePaymentRequiredHeader } from "@x402/core/http";
 import { createEd25519Signer, getUsdcAddress } from "@x402/stellar";
 import { ExactStellarScheme } from "@x402/stellar/exact/client";
 import { buildPaymentProofLinks } from "@query402/shared";
 import type { PaymentProofLinks } from "@query402/shared";
 import { nanoid } from "nanoid";
+import { validateChallengeAgainstConfig, type ChallengeMismatch } from "./challenge.js";
 import { config } from "./config.js";
 import { buildPaidClientRequestKey, getIdempotencyKey } from "./idempotency.js";
 import {
@@ -16,6 +19,61 @@ import {
 
 export { QuoteBindError, buildRequestedQuote, assertChallengeMatchesQuote };
 export type { RequestedQuote };
+
+export class ChallengeMismatchError extends Error {
+  readonly name = "ChallengeMismatchError";
+  constructor(public readonly mismatch: ChallengeMismatch) {
+    super(
+      `402 challenge ${mismatch.field} mismatch: expected ${mismatch.expected}, got ${mismatch.actual}. Payment NOT signed.`
+    );
+  }
+}
+
+/**
+ * Fetch the 402 challenge and compare it to the CLI's own configuration
+ * BEFORE any signing happens. Throws ChallengeMismatchError when the
+ * server's provider/network/asset/amount disagrees with the config; the
+ * signer is never constructed on that path.
+ */
+export async function fetchValidatedChallenge(endpoint: string): Promise<PaymentRequired> {
+  const probe = await fetch(endpoint, { method: "GET" });
+  if (probe.status !== 402) {
+    throw new Error(`Expected a 402 challenge from ${endpoint} but got status ${probe.status}.`);
+  }
+
+  const header = probe.headers.get("payment-required");
+  let challenge: PaymentRequired;
+  if (header) {
+    challenge = decodePaymentRequiredHeader(header);
+  } else {
+    // Some deployments inline the v1 challenge in the JSON body instead.
+    const body = (await probe.json().catch(() => null)) as {
+      x402Version?: number;
+      accepts?: unknown;
+    } | null;
+    if (!body || typeof body.x402Version !== "number" || !Array.isArray(body.accepts)) {
+      throw new Error("402 response carried no parsable payment challenge.");
+    }
+    challenge = body as unknown as PaymentRequired;
+  }
+
+  const validation = validateChallengeAgainstConfig(
+    challenge,
+    {
+      provider: new URL(endpoint).searchParams.get("provider") ?? "",
+      network: config.STELLAR_NETWORK,
+      asset: config.X402_ASSET,
+      maxPriceUsd: config.X402_MAX_PRICE_USD
+    },
+    endpoint
+  );
+
+  if (!validation.ok) {
+    throw new ChallengeMismatchError(validation.mismatch);
+  }
+
+  return challenge;
+}
 
 export function buildPaidQueryEndpoint(input: {
   mode: "search" | "news" | "scrape";
@@ -236,6 +294,12 @@ export async function runPaidQuery(
           if (!secretKey && !deps.createWallet && !deps.createPaymentHeaders) {
             throw new Error("DEMO_CLIENT_SECRET_KEY is required when DEMO_MODE is false");
           }
+
+          // Issue #176: compare the 402 challenge to this CLI's configuration
+          // BEFORE asking for a signature. This fetches and validates the
+          // challenge; on mismatch it throws and the signer below is never
+          // constructed.
+          await fetchValidatedChallenge(endpoint);
 
           const wallet = deps.createWallet
             ? deps.createWallet(secretKey ?? "test-secret", network)
