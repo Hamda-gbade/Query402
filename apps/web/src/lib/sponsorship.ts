@@ -46,6 +46,64 @@ export async function fetchSponsorshipEnabled(apiBaseUrl: string): Promise<boole
   return health.sponsorshipEnabled === true;
 }
 
+export interface BudgetGateDecision {
+  allowed: boolean;
+  reason: string | null;
+  decision: string | null;
+}
+
+/**
+ * Evaluate whether a sponsorship preview allows the next paid action.
+ * A preview that is not available (budget exhausted or policy deny) blocks the action.
+ */
+export function evaluateBudgetGate(preview: SponsorshipPreview): BudgetGateDecision {
+  if (!preview.available) {
+    return {
+      allowed: false,
+      reason: preview.reason ?? preview.decision,
+      decision: preview.decision
+    };
+  }
+  return { allowed: true, reason: null, decision: preview.decision };
+}
+
+/**
+ * Tracks the budget gate state across async preview requests.
+ * A late response for an older budget must not re-enable the actions,
+ * so only the latest request's response is applied.
+ */
+export class BudgetGate {
+  private latestRequestId = 0;
+  private current: BudgetGateDecision = { allowed: false, reason: null, decision: null };
+
+  beginRequest(): number {
+    return ++this.latestRequestId;
+  }
+
+  applyResponse(requestId: number, preview: SponsorshipPreview): void {
+    if (requestId !== this.latestRequestId) {
+      return;
+    }
+    this.current = evaluateBudgetGate(preview);
+  }
+
+  applyError(requestId: number, reason: string): void {
+    if (requestId !== this.latestRequestId) {
+      return;
+    }
+    this.current = { allowed: false, reason, decision: null };
+  }
+
+  get decision(): BudgetGateDecision {
+    return { ...this.current };
+  }
+
+  reset(): void {
+    this.latestRequestId = 0;
+    this.current = { allowed: false, reason: null, decision: null };
+  }
+}
+
 export async function fetchSponsorshipPreview(input: {
   apiBaseUrl: string;
   wallet: string;

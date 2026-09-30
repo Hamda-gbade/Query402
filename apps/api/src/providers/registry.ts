@@ -1,5 +1,12 @@
 import { ProviderAdapter, ProviderRegistry, AdapterExecutionResult, PaidQueryContext } from "./core.js";
-import { getProviderById } from "../lib/pricing.js";
+import {
+  assertPriceMatch,
+  buildChallengeAmountUnits,
+  getProviderById,
+  getProviderPriceUnits,
+  UnsafePriceError,
+  ZeroPriceError
+} from "../lib/pricing.js";
 import type {
   CircuitBreakerState,
   ExecutionFallbackReason,
@@ -89,8 +96,10 @@ export class DefaultProviderRegistry implements ProviderRegistry {
     mode: "search" | "news" | "scrape",
     providerId: string,
     queryOrUrl: string,
-    context?: PaidQueryContext
+    contextOrUnits?: PaidQueryContext | number
   ): Promise<AdapterExecutionResult> {
+    const context = typeof contextOrUnits === "object" ? contextOrUnits : undefined;
+    const challengeAmountUnits = typeof contextOrUnits === "number" ? contextOrUnits : undefined;
     const startedAt = Date.now();
     const providerDef = getProviderById(providerId);
     if (!providerDef) {
@@ -100,6 +109,20 @@ export class DefaultProviderRegistry implements ProviderRegistry {
     if (providerDef.category !== mode) {
       throw new Error(`Provider ${providerId} does not support mode ${mode}`);
     }
+
+    // Pricing gate: the challenge amount must match the catalog price
+    // exactly. Reject before the adapter runs when they diverge, when the
+    // price is zero, or when the price exceeds the safe integer range.
+    const catalogUnits = getProviderPriceUnits(providerId);
+    if (catalogUnits === 0) {
+      throw new ZeroPriceError(providerId);
+    }
+    if (!Number.isSafeInteger(catalogUnits)) {
+      throw new UnsafePriceError(catalogUnits);
+    }
+    const effectiveChallengeUnits =
+      challengeAmountUnits ?? buildChallengeAmountUnits(providerId);
+    assertPriceMatch(effectiveChallengeUnits, catalogUnits);
 
     const adapter = this.adapters.get(providerId);
     if (!adapter) {

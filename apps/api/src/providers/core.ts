@@ -37,6 +37,6 @@ export interface ProviderRegistry {
     mode: "search" | "news" | "scrape",
     providerId: string,
     queryOrUrl: string,
-    context?: PaidQueryContext
+    contextOrUnits?: PaidQueryContext | number
   ): Promise<AdapterExecutionResult>;
 }
