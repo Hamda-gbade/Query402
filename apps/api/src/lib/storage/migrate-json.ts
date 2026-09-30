@@ -5,7 +5,7 @@ import type { PaymentAttempt, UsageEvent } from "@query402/shared";
 import { z } from "zod";
 import { paymentAttemptToRow, usageEventToRow } from "./serialization.js";
 import { closeAnalyticsDb, getAnalyticsDb, runInAnalyticsTransaction } from "./sqlite/store.js";
-import { resolveApiDataPath, resolveConfinedDataPath } from "./paths.js";
+import { resolveApiDataPath } from "./paths.js";
 
 const usageEventSchema = z.object({
   id: z.string().min(1),
@@ -139,12 +139,11 @@ export function parseLegacyDbJson(raw: string): LegacyDbJson {
 }
 
 export function readLegacyDbJson(sourcePath: string): LegacyDbJson {
-  const confined = resolveConfinedDataPath(sourcePath);
-  if (!fs.existsSync(confined)) {
-    throw new Error("Legacy db.json not found");
+  if (!fs.existsSync(sourcePath)) {
+    throw new Error(`Legacy db.json not found: ${sourcePath}`);
   }
 
-  const raw = fs.readFileSync(confined, "utf-8");
+  const raw = fs.readFileSync(sourcePath, "utf-8");
   return parseLegacyDbJson(raw);
 }
 

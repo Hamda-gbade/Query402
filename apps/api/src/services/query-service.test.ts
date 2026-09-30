@@ -1,76 +1,76 @@
-import { QueryService } from './query-service';
-import { GroqClient } from '../lib/groq';
-import { validateUrlSafety } from '../lib/urlSafety';
-import { verifyPayment } from '../lib/x402';
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
-// Mock dependencies
-jest.mock('../lib/groq');
-jest.mock('../lib/urlSafety');
-jest.mock('../lib/x402');
+const registryExecuteMock = vi.fn();
+const loggerErrorMock = vi.fn();
 
-const mockGroqClient = new GroqClient() as jest.Mocked<GroqClient>;
-const mockValidateUrlSafety = validateUrlSafety as jest.MockedFunction<typeof validateUrlSafety>;
-const mockVerifyPayment = verifyPayment as jest.MockedFunction<typeof verifyPayment>;
+vi.mock("../providers/index.js", () => ({
+  registry: {
+    execute: (...args: unknown[]) => registryExecuteMock(...args)
+  }
+}));
 
-describe('QueryService', () => {
-  let service: QueryService;
+vi.mock("../lib/logger.js", () => ({
+  logger: {
+    error: (...args: unknown[]) => loggerErrorMock(...args)
+  }
+}));
 
+describe("executeQuery", () => {
   beforeEach(() => {
-    service = new QueryService(mockGroqClient);
-    jest.clearAllMocks();
+    registryExecuteMock.mockReset();
+    loggerErrorMock.mockReset();
+    vi.resetModules();
   });
 
-  describe('processQuery', () => {
-    const baseRequest = {
-      query: 'test query',
-      targetUrls: ['https://safe-url.com'],
-      model: 'llama-3.1-70b',
-      paymentProof: 'valid-proof'
-    };
+  it("rejects unsafe scrape URLs at the service boundary", async () => {
+    process.env.X402_PAY_TO_ADDRESS = "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF";
+    const [{ executeQuery }, { UnsafeScrapeUrlError }] = await Promise.all([
+      import("./query-service.js"),
+      import("../lib/scrape-url-safety.js")
+    ]);
 
-    it('calls the model once for paid, safe requests', async () => {
-      mockVerifyPayment.mockResolvedValue(true);
-      mockValidateUrlSafety.mockResolvedValue({ isSafe: true });
-      mockGroqClient.callModel.mockResolvedValue('model response');
+    await expect(
+      executeQuery({
+        mode: "scrape",
+        provider: "scrape.page",
+        url: "http://169.254.169.254/latest/meta-data"
+      })
+    ).rejects.toBeInstanceOf(UnsafeScrapeUrlError);
+  });
 
-      const result = await service.processQuery(baseRequest);
+  it("logs provider failures with safe metadata only", async () => {
+    process.env.X402_PAY_TO_ADDRESS = "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF";
+    const providerError = new Error(
+      'upstream failed query="super secret question" url=https://secret.example.test/search payment-response=proof_123 Authorization:Bearer token_abc privateKey=wallet_secret'
+    );
+    registryExecuteMock.mockRejectedValueOnce(providerError);
 
-      expect(mockVerifyPayment).toHaveBeenCalledWith('valid-proof');
-      expect(mockValidateUrlSafety).toHaveBeenCalledWith('https://safe-url.com');
-      expect(mockGroqClient.callModel).toHaveBeenCalledTimes(1);
-      expect(result).toEqual({ result: 'model response', status: 'success' });
+    const { executeQuery } = await import("./query-service.js");
+
+    await expect(
+      executeQuery({
+        mode: "search",
+        provider: "search.live",
+        q: "super secret question"
+      })
+    ).rejects.toThrow(providerError.message);
+
+    expect(loggerErrorMock).toHaveBeenCalledTimes(1);
+
+    const [payload, message] = loggerErrorMock.mock.calls[0];
+    const serializedPayload = JSON.stringify(payload);
+
+    expect(message).toBe("provider execution failed");
+    expect(payload).toMatchObject({
+      providerId: "search.live",
+      mode: "search",
+      errorClass: "Error"
     });
-
-    it('does not call the model for failed payment', async () => {
-      mockVerifyPayment.mockResolvedValue(false);
-
-      await expect(service.processQuery(baseRequest)).rejects.toThrow('Invalid payment proof');
-
-      expect(mockGroqClient.callModel).not.toHaveBeenCalled();
-      expect(mockValidateUrlSafety).not.toHaveBeenCalled();
-    });
-
-    it('does not call the model for unsafe URLs', async () => {
-      mockVerifyPayment.mockResolvedValue(true);
-      mockValidateUrlSafety.mockResolvedValue({ isSafe: false });
-
-      await expect(service.processQuery(baseRequest)).rejects.toThrow('One or more URLs failed safety checks');
-
-      expect(mockGroqClient.callModel).not.toHaveBeenCalled();
-    });
-
-    it('handles multiple URLs with mixed safety', async () => {
-      mockVerifyPayment.mockResolvedValue(true);
-      mockValidateUrlSafety
-        .mockResolvedValueOnce({ isSafe: true })
-        .mockResolvedValueOnce({ isSafe: false });
-
-      await expect(service.processQuery({
-        ...baseRequest,
-        targetUrls: ['https://safe-url.com', 'https://unsafe-url.com']
-      })).rejects.toThrow('One or more URLs failed safety checks');
-
-      expect(mockGroqClient.callModel).not.toHaveBeenCalled();
-    });
+    expect(payload.errorMessage).toContain("[redacted-url]");
+    expect(serializedPayload).not.toContain("super secret question");
+    expect(serializedPayload).not.toContain("https://secret.example.test/search");
+    expect(serializedPayload).not.toContain("proof_123");
+    expect(serializedPayload).not.toContain("token_abc");
+    expect(serializedPayload).not.toContain("wallet_secret");
   });
 });

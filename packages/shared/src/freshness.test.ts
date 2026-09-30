@@ -25,9 +25,9 @@ describe("timestamp freshness", () => {
   it("uses an exclusive expiry boundary", () => {
     const boundary = new Date(now - DEFAULT_TIMESTAMP_MAX_AGE_MS).toISOString();
     expect(isFreshTimestamp(boundary, now)).toBe(false);
-    expect(isFreshTimestamp(new Date(now - DEFAULT_TIMESTAMP_MAX_AGE_MS + 1).toISOString(), now)).toBe(
-      true
-    );
+    expect(
+      isFreshTimestamp(new Date(now - DEFAULT_TIMESTAMP_MAX_AGE_MS + 1).toISOString(), now)
+    ).toBe(true);
   });
 
   it("accepts current timestamps but rejects future timestamps", () => {

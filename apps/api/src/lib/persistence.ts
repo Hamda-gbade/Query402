@@ -9,13 +9,13 @@ import type {
   DetailedAnalyticsResponse,
   QueryMode,
   PaymentSource,
-  ProviderExecutionMetadata
+  ProviderExecutionMetadata,
+  SettlementDigest
 } from "@query402/shared";
 import type {
   PaginationOptions,
   AnalyticsQueryOptions,
-  PaymentUsagePair,
-  SettlementDigest
+  PaymentUsagePair
 } from "./storage/types.js";
 import { getStorageRepository } from "./storage/index.js";
 import {

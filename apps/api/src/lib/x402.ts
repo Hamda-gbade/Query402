@@ -75,6 +75,20 @@ function getProviderIdFromRequest(req: Request): string {
   return typeof providerId === "string" ? providerId : "unknown";
 }
 
+function getExpectedPriceForRequest(req: Request): string {
+  const mode = routeModeFromPath(req.path);
+  if (!mode) {
+    return "$0.01";
+  }
+  const basePrice = basePriceByMode[mode as RouteMode];
+  const pId = getProviderIdFromRequest(req);
+  const p = getProviderById(pId);
+  if (p && p.category === mode) {
+    return formatUsdPrice(p.priceUsd);
+  }
+  return basePrice;
+}
+
 function getProviderFromContext(context: HTTPRequestContext) {
   const rawProvider =
     context.adapter.getQueryParam?.("provider") ?? context.adapter.getQueryParams?.()["provider"];
@@ -224,6 +238,11 @@ export const getX402LifecycleHandlers = (network: string) => ({
         id: paymentId,
         endpoint: req.path,
         providerId,
+        amountUsd: Number(ctx.requirements.amount),
+        network,
+        payToAddress: ctx.requirements.payTo,
+        facilitatorUrl: config.X402_FACILITATOR_URL,
+        status: "verified",
         evidence: {
           status: "verified",
           network,
@@ -407,13 +426,98 @@ export function createX402Middleware() {
       return;
     }
 
-    if
+    if (!httpContext) {
+      return;
+    }
+
+    const evidence = buildEvidenceFromHttpContext({
+      context: httpContext,
+      requirements: context.requirements,
+      paymentPayload: clonePaymentPayload(context.paymentPayload),
+      settleResult: context.result
+    });
+    setPaymentEvidence(req, evidence);
+    await persistPaymentEvidence(evidence, getPaidRequestRecord(req));
+    (req as EvidenceRequest).paymentEvidencePersisted = true;
   });
 
-  return paymentMiddlewareFromHTTPServer({
-    resourceServer,
-    routes: routeConfig,
-    network,
-    payTo
-  });
+  const httpServer = new x402HTTPResourceServer(resourceServer, routeConfig);
+  const paymentMiddleware = paymentMiddlewareFromHTTPServer(httpServer);
+
+  return async (req: Request, res: Response, next: NextFunction) => {
+    if (isProtectedX402Route(req.path)) {
+      const rawHeader = extractAnyPaymentHeader(req);
+      if (rawHeader === undefined) {
+        const debug = buildPaymentDebugMetadata({
+          failureType: "no_payment_header",
+          route: req.path,
+          providerId: getProviderIdFromRequest(req),
+          expectedPrice: getExpectedPriceForRequest(req)
+        });
+        return res.status(400).json({
+          error: "Payment header is required",
+          type: "no_payment_header",
+          errorCode: "no_payment_header",
+          debug
+        });
+      }
+
+      if (rawHeader.trim() === "") {
+        const debug = buildPaymentDebugMetadata({
+          failureType: "invalid_payment_header",
+          route: req.path,
+          providerId: getProviderIdFromRequest(req),
+          expectedPrice: getExpectedPriceForRequest(req),
+          paymentHeader: rawHeader
+        });
+        return res.status(400).json({
+          error: "Payment header is blank",
+          type: "invalid_payment_header",
+          errorCode: "invalid_payment_header",
+          debug
+        });
+      }
+    }
+
+    // Prevent browsers and proxies from caching sensitive payment evidence.
+    if (req.path.startsWith("/x402/")) {
+      res.set("Cache-Control", "no-store");
+    }
+    const originalJson = res.json.bind(res);
+    res.json = function (body: unknown) {
+      if (
+        res.statusCode === 402 &&
+        body &&
+        typeof body === "object" &&
+        !("debug" in (body as Record<string, unknown>))
+      ) {
+        const pId = Array.isArray(req.query.provider)
+          ? req.query.provider[0]
+          : (req.query.provider ?? "unknown");
+        const paymentHeader =
+          req.header("payment-signature") ?? req.header("x-payment") ?? undefined;
+        const mode = routeModeFromPath(req.path);
+        let expectedPrice = "$0.01";
+        if (mode) {
+          expectedPrice = basePriceByMode[mode as RouteMode];
+          if (typeof pId === "string") {
+            const p = getProviderById(pId);
+            if (p && p.category === mode) {
+              expectedPrice = formatUsdPrice(p.priceUsd);
+            }
+          }
+        }
+        const debug = buildPaymentDebugMetadata({
+          failureType: "payment_required",
+          route: req.path,
+          providerId: typeof pId === "string" ? pId : "unknown",
+          expectedPrice,
+          paymentHeader
+        });
+        return originalJson(redactSensitiveObject({ ...(body as Record<string, unknown>), debug }));
+      }
+      return originalJson(redactSensitiveObject(body));
+    };
+    return paymentMiddleware(req, res, next);
+  };
 }

@@ -107,9 +107,7 @@ export function serializeReceipt(receipt: Query402Receipt): string {
  * provider ids into the path beyond a short slug.
  */
 export function receiptFilename(receipt: Query402Receipt, generatedAt?: Date): string {
-  const stamp = (generatedAt ?? new Date(receipt.generatedAt))
-    .toISOString()
-    .replace(/[:.]/g, "-");
+  const stamp = (generatedAt ?? new Date(receipt.generatedAt)).toISOString().replace(/[:.]/g, "-");
   const providerSlug = receipt.providerId.replace(/[^a-z0-9_.-]/gi, "_");
   return `query402-receipt-${receipt.mode}-${providerSlug}-${stamp}.json`;
 }
@@ -125,9 +123,7 @@ export interface CopyReceiptResult {
  * triggers automatically when the Clipboard API is unavailable (older
  * browsers, restrictive iframes, missing permissions).
  */
-export async function copyReceiptToClipboard(
-  receipt: Query402Receipt
-): Promise<CopyReceiptResult> {
+export async function copyReceiptToClipboard(receipt: Query402Receipt): Promise<CopyReceiptResult> {
   const json = serializeReceipt(receipt);
   if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
     try {
@@ -150,7 +146,11 @@ export function downloadReceipt(
   payload?: string,
   generatedAt?: Date
 ): void {
-  if (typeof document === "undefined" || typeof URL === "undefined" || typeof Blob === "undefined") {
+  if (
+    typeof document === "undefined" ||
+    typeof URL === "undefined" ||
+    typeof Blob === "undefined"
+  ) {
     return;
   }
   const json = payload ?? serializeReceipt(receipt);

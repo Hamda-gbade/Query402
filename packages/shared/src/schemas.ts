@@ -220,6 +220,7 @@ export const slaBadgesSchema = z.object({
 export const paidRouteErrorCodeSchema = z.enum([
   "payment_required",
   "payment_failed",
+  "payment_invalid",
   "provider_error",
   "internal_error",
   "validation_error",

@@ -93,7 +93,7 @@ function parseIPV4MappedIPv6(address: string) {
   }
 
   const value = normalized.slice(marker.length);
-  const dotted = parseIPv4(value);
+  const dotted = parseIPV4(value);
   if (dotted) {
     return dotted;
   }
@@ -107,7 +107,7 @@ function parseIPV4MappedIPv6(address: string) {
 }
 
 function isBlockedIPv4(address: string) {
-  const parsed = parseIPv4(address);
+  const parsed = parseIPV4(address);
   if (!parsed) {
     return true;
   }
@@ -139,14 +139,14 @@ function trimIPv6Brackets(address: string) {
   return address.startsWith("[") && address.endsWith("]") ? address.slice(1, -1) : address;
 }
 
-function normalizeHostname"hostname: string) {
+function normalizeHostname(hostname: string) {
   return hostname.toLowerCase().replace(/\.+$/, "");
 }
 
 function isBlockedIPv6(address: string) {
   const mappedIPV4 = parseIPV4MappedIPv6(address);
-  if (mappedIPv4) {
-    return isBlockedIPv4(mappedIPv4);
+  if (mappedIPV4) {
+    return isBlockedIPv4(mappedIPV4);
   }
 
   const parts = expandIPv6(address);
@@ -178,12 +178,12 @@ function isBlockedIPv6(address: string) {
 }
 
 function isBlockedAddress(address: string, family?: number) {
-  const mappedIPv4 = parseIPv4MappedIPv6(address);
+  const mappedIPv4 = parseIPV4MappedIPv6(address);
   if (mappedIPv4) {
-    return isBlockedIPV4(mappedIPv4);
+    return isBlockedIPv4(mappedIPv4);
   }
 
-  if (family === 4 || net.isIPV4(address)) {
+  if (family === 4 || net.isIPv4(address)) {
     return isBlockedIPv4(address);
   }
 

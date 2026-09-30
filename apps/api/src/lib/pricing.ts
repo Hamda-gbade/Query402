@@ -5,6 +5,7 @@ import type {
   ProviderDefinition,
   ProviderSlaBadge,
   ReliabilityBand,
+  SlaBadges,
   SourceType
 } from "@query402/shared";
 
@@ -208,6 +209,53 @@ export function computeSlaBadge(
   return { latencyBand, reliabilityBand, paymentMode, badgeCopy };
 }
 
+/**
+ * Dashboard-facing SLA badge summary. Deliberately distinct from the canonical
+ * per-provider slaBadge: latency thresholds here come from the original
+ * catalog-badge feature (<=800ms fast, <=1500ms standard), deterministic
+ * fallback providers are reported as "fallback", and payment mode is always
+ * x402 because every catalog provider settles through the x402 flow.
+ */
+export function deriveSlaBadges(providerData: {
+  sourceType: ProviderDefinition["sourceType"];
+  latencyEstimateMs: number;
+}): SlaBadges {
+  const latencyBand =
+    providerData.latencyEstimateMs <= 800
+      ? "fast"
+      : providerData.latencyEstimateMs <= 1500
+        ? "standard"
+        : "slow";
+
+  const latencyLabels: Record<string, string> = {
+    fast: "Fast response",
+    standard: "Standard latency",
+    slow: "Higher latency"
+  };
+
+  const reliabilityBand =
+    providerData.sourceType === "live"
+      ? "live"
+      : providerData.sourceType === "deterministic-fallback"
+        ? "fallback"
+        : "demo";
+
+  const reliabilityLabels: Record<string, string> = {
+    live: "Live results",
+    fallback: "Fallback cached",
+    demo: "Demo reliability"
+  };
+
+  return {
+    latencyBand,
+    latencyLabel: latencyLabels[latencyBand],
+    reliabilityBand,
+    reliabilityLabel: reliabilityLabels[reliabilityBand],
+    paymentMode: "x402",
+    paymentLabel: "Pay-per-query (x402)"
+  };
+}
+
 export function buildCapabilityMatrix(): ProviderCapability[] {
   return providers
     .map((p) => ({
@@ -238,7 +286,9 @@ export const providers: ProviderDefinition[] = [
     qualityScore: 99,
     sourceType: "live",
     provenance: "live",
-    enabled: true
+    enabled: true,
+    slaBadge: computeSlaBadge(1500, "live"),
+    slaBadges: deriveSlaBadges({ sourceType: "live", latencyEstimateMs: 1500 })
   },
   {
     id: "search.basic",
@@ -250,7 +300,9 @@ export const providers: ProviderDefinition[] = [
     qualityScore: 75,
     sourceType: "deterministic-fallback",
     provenance: "mock",
-    enabled: true
+    enabled: true,
+    slaBadge: computeSlaBadge(700, "deterministic-fallback"),
+    slaBadges: deriveSlaBadges({ sourceType: "deterministic-fallback", latencyEstimateMs: 700 })
   },
   {
     id: "search.pro",
@@ -262,7 +314,9 @@ export const providers: ProviderDefinition[] = [
     qualityScore: 90,
     sourceType: "deterministic-fallback",
     provenance: "mock",
-    enabled: true
+    enabled: true,
+    slaBadge: computeSlaBadge(1100, "deterministic-fallback"),
+    slaBadges: deriveSlaBadges({ sourceType: "deterministic-fallback", latencyEstimateMs: 1100 })
   },
   {
     id: "news.fast",
@@ -274,7 +328,9 @@ export const providers: ProviderDefinition[] = [
     qualityScore: 72,
     sourceType: "deterministic-fallback",
     provenance: "mock",
-    enabled: true
+    enabled: true,
+    slaBadge: computeSlaBadge(800, "deterministic-fallback"),
+    slaBadges: deriveSlaBadges({ sourceType: "deterministic-fallback", latencyEstimateMs: 800 })
   },
   {
     id: "news.deep",
@@ -286,7 +342,9 @@ export const providers: ProviderDefinition[] = [
     qualityScore: 93,
     sourceType: "deterministic-fallback",
     provenance: "mock",
-    enabled: true
+    enabled: true,
+    slaBadge: computeSlaBadge(1400, "deterministic-fallback"),
+    slaBadges: deriveSlaBadges({ sourceType: "deterministic-fallback", latencyEstimateMs: 1400 })
   },
   {
     id: "scrape.page",
@@ -298,7 +356,9 @@ export const providers: ProviderDefinition[] = [
     qualityScore: 70,
     sourceType: "deterministic-fallback",
     provenance: "mock",
-    enabled: true
+    enabled: true,
+    slaBadge: computeSlaBadge(1000, "deterministic-fallback"),
+    slaBadges: deriveSlaBadges({ sourceType: "deterministic-fallback", latencyEstimateMs: 1000 })
   },
   {
     id: "scrape.extract",
@@ -310,7 +370,9 @@ export const providers: ProviderDefinition[] = [
     qualityScore: 95,
     sourceType: "deterministic-fallback",
     provenance: "mock",
-    enabled: true
+    enabled: true,
+    slaBadge: computeSlaBadge(1700, "deterministic-fallback"),
+    slaBadges: deriveSlaBadges({ sourceType: "deterministic-fallback", latencyEstimateMs: 1700 })
   }
 ];
 

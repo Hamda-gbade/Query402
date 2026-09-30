@@ -81,7 +81,7 @@ function decrementBudget(
     .prepare(
       `UPDATE sponsorship_budgets
        SET spent_usd = MAX(0, spent_usd - ?)
-       WHERE scope = ? AND wallet IS ? AND window_start = ?`)
+       WHERE scope = ? AND wallet IS ? AND window_start = ?`
     )
     .run(amountUsd, scope, wallet, windowStart);
 }
@@ -180,7 +180,7 @@ export interface BudgetSnapshot {
   globalSpentUsd: number;
   walletRemainingUsd: number;
   globalRemainingUsd: number;
-  yalletLimitUsd: number;
+  walletLimitUsd: number;
   globalLimitUsd: number;
 }
 
@@ -204,6 +204,10 @@ export function readBudgetSnapshot(wallet: string, windowStart = getDailyWindowS
     walletLimitUsd,
     globalLimitUsd
   };
+}
+
+export function getRemainingBudget(wallet: string): number | null {
+  return readBudgetSnapshot(wallet).walletRemainingUsd;
 }
 
 export interface GrantWithDebitInput {

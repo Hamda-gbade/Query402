@@ -6,7 +6,11 @@ import { getAnalyticsSummary, getUsageEvents, getSettlementDigest } from "../lib
 import { config, getConfigSnapshot, getFacilitatorConfigured } from "../lib/config.js";
 import { apiVersion, buildMetadata } from "../lib/build-metadata.js";
 import { getCatalog } from "../services/query-service.js";
-import { MAX_EXPORT_SIZE, MAX_PAYMENT_ATTEMPTS, MAX_USAGE_EVENTS } from "../lib/storage/constants.js";
+import {
+  MAX_EXPORT_SIZE,
+  MAX_PAYMENT_ATTEMPTS,
+  MAX_USAGE_EVENTS
+} from "../lib/storage/constants.js";
 import { isStorageAvailable } from "../lib/storage/index.js";
 import { checkFacilitatorSupported } from "../lib/facilitator-check.js";
 import { isSchemaCurrent } from "../lib/storage/sqlite/store.js";
@@ -129,7 +133,10 @@ publicRouter.get("/api/usage", async (req, res, next) => {
 
 publicRouter.get("/api/analytics", async (req, res, next) => {
   try {
-    if (checkOverLimit(req.query.recentUsageLimit) || checkOverLimit(req.query.recentPaymentLimit)) {
+    if (
+      checkOverLimit(req.query.recentUsageLimit) ||
+      checkOverLimit(req.query.recentPaymentLimit)
+    ) {
       return res.status(400).json(overLimitErrorPayload);
     }
 

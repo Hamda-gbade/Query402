@@ -2,10 +2,12 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { ProviderDefinition, QueryMode, SponsorshipPreview } from "@query402/shared";
 import {
   Activity,
+  AlertCircle,
   AlertTriangle,
   Check,
   CheckCircle2,
   CircleDollarSign,
+  Clock,
   Clock4,
   Copy,
   Download,
@@ -16,13 +18,16 @@ import {
   ShieldCheck,
   Sparkles,
   TerminalSquare,
-  Check,
-  Clock,
-  Copy,
+  TrendingUp,
   XCircle
 } from "lucide-react";
 import { Link } from "react-router-dom";
-import type { AnalyticsResponse, EvidenceCheckItem, PaidQueryResponse } from "../types.js";
+import type {
+  AnalyticsResponse,
+  EvidenceCheckItem,
+  PaidQueryResponse,
+  PrivacySafeAnalyticsResponse
+} from "../types.js";
 import { API_BASE_URL, fetchHealth, fetchJson, money } from "../lib/api.js";
 import {
   BudgetGate,
@@ -92,7 +97,10 @@ function PayToAddressDisplay({
   if (!configured || !address) {
     return (
       <span className="pay-to-warning-badge" title="No payout address configured!">
-        <AlertTriangle size={13} style={{ display: "inline-block", marginRight: "4px", verticalAlign: "-2px" }} />
+        <AlertTriangle
+          size={13}
+          style={{ display: "inline-block", marginRight: "4px", verticalAlign: "-2px" }}
+        />
         Missing pay-to address
       </span>
     );
@@ -140,11 +148,17 @@ export default function ControlDeckPage() {
   const [selectedProvider, setSelectedProvider] = useState<string>(modeDefaultProvider.search);
   const [result, setResult] = useState<PaidQueryResponse | null>(null);
   const [analytics, setAnalytics] = useState<AnalyticsResponse | null>(null);
-  const [privacySafeAnalytics, setPrivacySafeAnalytics] = useState<PrivacySafeAnalyticsResponse | null>(null);
+  const [privacySafeAnalytics, setPrivacySafeAnalytics] =
+    useState<PrivacySafeAnalyticsResponse | null>(null);
+  const [isAnalyticsLoading, setIsAnalyticsLoading] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [sponsorshipEnabled, setSponsorshipEnabled] = useState(false);
-  const [healthDiagnostics, setHealthDiagnostics] = useState<{ network?: string; payToConfigured?: boolean; payToAddress?: string } | null>(null);
+  const [healthDiagnostics, setHealthDiagnostics] = useState<{
+    network?: string;
+    payToConfigured?: boolean;
+    payToAddress?: string;
+  } | null>(null);
   const [preview, setPreview] = useState<SponsorshipPreview | null>(null);
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [isPreviewLoading, setIsPreviewLoading] = useState(false);
@@ -252,20 +266,28 @@ export default function ControlDeckPage() {
   }
 
   async function refreshMetrics() {
-    const data = await fetchJson<AnalyticsResponse>(`${API_BASE_URL}/api/analytics`);
-    setAnalytics(data);
-
-    // Fetch privacy-safe analytics
+    setIsAnalyticsLoading(true);
     try {
-      const privacySafeData = await fetchJson<PrivacySafeAnalyticsResponse>(`${API_BASE_URL}/api/v1/analytics?limit=5`);
-      setPrivacySafeAnalytics(privacySafeData);
-    } catch (analyticsError) {
-      // Silently fail to fetch privacy-safe analytics if endpoint not available
-      console.warn("Could not fetch privacy-safe analytics", analyticsError);
+      const data = await fetchJson<AnalyticsResponse>(`${API_BASE_URL}/api/analytics`);
+      setAnalytics(data);
+
+      // Fetch privacy-safe analytics
+      try {
+        const privacySafeData = await fetchJson<PrivacySafeAnalyticsResponse>(
+          `${API_BASE_URL}/api/v1/analytics?limit=5`
+        );
+        setPrivacySafeAnalytics(privacySafeData);
+      } catch (analyticsError) {
+        // Silently fail to fetch privacy-safe analytics if endpoint not available
+        console.warn("Could not fetch privacy-safe analytics", analyticsError);
+      }
+    } finally {
+      setIsAnalyticsLoading(false);
     }
   }
 
-  const showAnalyticsSkeleton = isAnalyticsLoading && analytics === null;
+  const showAnalyticsSkeleton =
+    isAnalyticsLoading && analytics === null && privacySafeAnalytics === null;
   const hasUsageHistory = (analytics?.totalQueries ?? 0) > 0;
 
   type ReceiptFeedback = { kind: "copied" | "downloaded"; at: number } | null;
@@ -295,9 +317,7 @@ export default function ControlDeckPage() {
       downloadReceipt(receipt);
       setReceiptFeedback({ kind: "downloaded", at: Date.now() });
     } catch (exportError) {
-      setError(
-        exportError instanceof Error ? exportError.message : "Failed to export receipt"
-      );
+      setError(exportError instanceof Error ? exportError.message : "Failed to export receipt");
     }
   }
 
@@ -828,7 +848,8 @@ export default function ControlDeckPage() {
 
                 <div className="trace-box">
                   <p>
-                    payment-evidence: {result.payment.evidence.kind} ({result.payment.evidence.status})
+                    payment-evidence: {result.payment.evidence.kind} (
+                    {result.payment.evidence.status})
                   </p>
                   <p>network: {result.payment.evidence.network}</p>
                   <p>asset: {result.payment.evidence.asset ?? "<unspecified>"}</p>
@@ -844,10 +865,7 @@ export default function ControlDeckPage() {
                         </span>
                       ) : null}
                       {receipt?.payment.transactionHash ? (
-                        <span
-                          className="receipt-tx-pill"
-                          title={receipt.payment.transactionHash}
-                        >
+                        <span className="receipt-tx-pill" title={receipt.payment.transactionHash}>
                           tx {receipt.payment.transactionHash.slice(0, 8)}…
                         </span>
                       ) : null}
@@ -869,9 +887,7 @@ export default function ControlDeckPage() {
                       onClick={exportReceipt}
                       disabled={!receipt}
                       title={
-                        receipt
-                          ? `Download ${receiptFilename(receipt)}`
-                          : "Run a paid query first"
+                        receipt ? `Download ${receiptFilename(receipt)}` : "Run a paid query first"
                       }
                     >
                       <Download size={14} /> Export JSON receipt
@@ -930,7 +946,7 @@ export default function ControlDeckPage() {
               <h3>
                 <TrendingUp size={16} /> On-Chain Analytics (Privacy-Safe)
               </h3>
-              
+
               {/* Settled Volume */}
               <div className="settlement-group">
                 <div className="settlement-header">
@@ -940,7 +956,9 @@ export default function ControlDeckPage() {
                 <ul>
                   <li>
                     <span>Volume</span>
-                    <strong>${privacySafeAnalytics.aggregation.settled.totalVolumeUsd.toFixed(6)}</strong>
+                    <strong>
+                      ${privacySafeAnalytics.aggregation.settled.totalVolumeUsd.toFixed(6)}
+                    </strong>
                   </li>
                   <li>
                     <span>Queries</span>
@@ -948,15 +966,30 @@ export default function ControlDeckPage() {
                   </li>
                   <li className="category-item">
                     <span>Search</span>
-                    <strong>${privacySafeAnalytics.aggregation.settled.byCategory.search.volumeUsd.toFixed(6)}</strong>
+                    <strong>
+                      $
+                      {privacySafeAnalytics.aggregation.settled.byCategory.search.volumeUsd.toFixed(
+                        6
+                      )}
+                    </strong>
                   </li>
                   <li className="category-item">
                     <span>News</span>
-                    <strong>${privacySafeAnalytics.aggregation.settled.byCategory.news.volumeUsd.toFixed(6)}</strong>
+                    <strong>
+                      $
+                      {privacySafeAnalytics.aggregation.settled.byCategory.news.volumeUsd.toFixed(
+                        6
+                      )}
+                    </strong>
                   </li>
                   <li className="category-item">
                     <span>Scrape</span>
-                    <strong>${privacySafeAnalytics.aggregation.settled.byCategory.scrape.volumeUsd.toFixed(6)}</strong>
+                    <strong>
+                      $
+                      {privacySafeAnalytics.aggregation.settled.byCategory.scrape.volumeUsd.toFixed(
+                        6
+                      )}
+                    </strong>
                   </li>
                 </ul>
               </div>
@@ -971,7 +1004,9 @@ export default function ControlDeckPage() {
                   <ul>
                     <li>
                       <span>Volume</span>
-                      <strong>${privacySafeAnalytics.aggregation.verified.totalVolumeUsd.toFixed(6)}</strong>
+                      <strong>
+                        ${privacySafeAnalytics.aggregation.verified.totalVolumeUsd.toFixed(6)}
+                      </strong>
                     </li>
                     <li>
                       <span>Queries</span>
@@ -1015,7 +1050,9 @@ export default function ControlDeckPage() {
                 </div>
               )}
 
-              <p className="privacy-notice">✓ Query text and URLs redacted. Payer addresses hashed. Raw payments never exposed.</p>
+              <p className="privacy-notice">
+                ✓ Query text and URLs redacted. Payer addresses hashed. Raw payments never exposed.
+              </p>
             </div>
           )}
 

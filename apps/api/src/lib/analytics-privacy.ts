@@ -10,11 +10,7 @@ export function hashPayerKey(payerPublicKey: string | undefined): string | undef
   if (!payerPublicKey) {
     return undefined;
   }
-  return crypto
-    .createHash("sha256")
-    .update(payerPublicKey)
-    .digest("hex")
-    .slice(0, 16);
+  return crypto.createHash("sha256").update(payerPublicKey).digest("hex").slice(0, 16);
 }
 
 /** Result of preparing an analytics record for durable storage. */
@@ -293,7 +289,9 @@ export function decodeCursor(cursor: string): { timestamp: string; id: string } 
 /**
  * Generate next cursor for pagination
  */
-export function generateNextCursor(records: Array<{ createdAt: string; id: string }>): string | undefined {
+export function generateNextCursor(
+  records: Array<{ createdAt: string; id: string }>
+): string | undefined {
   if (records.length === 0) {
     return undefined;
   }

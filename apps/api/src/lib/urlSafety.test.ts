@@ -111,7 +111,7 @@ describe("getRequestPolicy", () => {
     const policy = getRequestPolicy();
     expect(policy.timeout).toBeGreaterThan(0);
     expect(policy.maxResponseSize).toBeGreaterThan(0);
-    expect(policy.maxRedirects).toBe GreaterThan(0);
+    expect(policy.maxRedirects).toBeGreaterThan(0);
     expect(policy.allowedContentTypes).toContain("text/html");
   });
 });

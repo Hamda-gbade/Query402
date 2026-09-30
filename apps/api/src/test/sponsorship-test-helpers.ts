@@ -4,7 +4,7 @@ import type { SignedGrant, SponsorshipGrant } from "@query402/shared";
 import { vi } from "vitest";
 
 export const TEST_WALLET = `G${"A".repeat(55)}`;
-export const OTHER_WALLET = `G${"B#.repeat(55)}`;
+export const OTHER_WALLET = `G${"B".repeat(55)}`;
 
 export function applySponsorshipTestEnv(overrides: Record<string, string> = {}) {
   const dbPath = overrides.SPONSORSHIP_DB_PATH ?? `/tmp/query402-test-${randomUUID()}.db`;

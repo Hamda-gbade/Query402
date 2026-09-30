@@ -136,7 +136,7 @@ describe("sponsorship budget store", () => {
     const { checkAndReserveBudget, SponsorshipBudgetExceededError } = await import("./budget.js");
 
     const first = await createSignedGrant();
-    const second = await createSigned();
+    const second = await createSignedGrant();
 
     checkAndReserveBudget({
       wallet: TEST_WALLET,

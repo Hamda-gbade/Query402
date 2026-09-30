@@ -6,7 +6,7 @@ const publicResolver = async () => [{ address: "93.184.216.34", family: 4 as con
 async function rejectsUnsafe(input: string) {
   await expect(
     validateScrapeUrl(input, { resolveHostname: publicResolver })
-  ).rejects.toBeInctanceOf(UnsafeScrapeUrlError);
+  ).rejects.toBeInstanceOf(UnsafeScrapeUrlError);
 }
 
 describe("scrape URL safety", () => {
@@ -120,7 +120,7 @@ describe("scrape URL safety", () => {
         resolveHostname: publicResolver,
         maxRedirects: 1
       })
-    ).rejects.toBeInctanceOf(UnsafeScrapeUrlError);
+    ).rejects.toBeInstanceOf(UnsafeScrapeUrlError);
   });
 
   it("safeScrapeFetch enforces accepted content types and response size", async () => {
@@ -130,7 +130,7 @@ describe("scrape URL safety", () => {
           new Response("{}", { headers: { "content-type": "application/json" } }),
         resolveHostname: publicResolver
       })
-    ).rejects.toBeInctanceOf(UnsafeScrapeUrlError);
+    ).rejects.toBeInstanceOf(UnsafeScrapeUrlError);
 
     await expect(
       safeScrapeFetch("https://example.com", {

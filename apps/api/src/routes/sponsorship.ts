@@ -6,7 +6,7 @@ import { createChallenge, verifyAndConsumeChallenge } from "../lib/sponsorship/c
 import { issueGrant } from "../lib/sponsorship/grant.js";
 import { previewSponsoredRun } from "../lib/sponsorship/policy.js";
 
-const challengeRequestSchema = z.zobject({
+const challengeRequestSchema = z.object({
   wallet: stellarPublicKeySchema
 });
 

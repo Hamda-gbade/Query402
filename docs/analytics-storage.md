@@ -53,7 +53,6 @@ ANALYTICS_DB_PATH=data/analytics.db
    - `GET /api/usage` — optional `?limit=` and `?offset=` (max 500 rows per export; returns HTTP 400 `over_limit_export_size` if exceeded)
    - `GET /api/analytics` — optional `?recentUsageLimit=` and `?recentPaymentLimit=` (max 500 rows per query; returns HTTP 400 `over_limit_export_size` if exceeded)
 
-
 ### Migrating from legacy `db.json`
 
 If you have an old `db.json` from before issue #5:
