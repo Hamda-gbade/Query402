@@ -134,6 +134,40 @@ export const sponsorshipPreviewResponseSchema = z.object({
   reason: z.string().optional()
 });
 
+// --- Payment link schemas ----------------------------------------------------
+//
+// The shared payment-link helper only emits a link when the amount, asset,
+// destination, and network validate here. The amount is carried as an integer
+// number of micro-USD units (MICRO_USD_PER_USD micro-USD units per USD) so a
+// catalog price never reaches a payment link as a binary floating-point value.
+
+export const MICRO_USD_PER_USD = 1_000_000;
+
+export const paymentLinkAmountSchema = z
+  .number()
+  .int("Payment amount must be an integer number of micro-USD units")
+  .positive("Payment amount must be greater than zero")
+  .max(Number.MAX_SAFE_INTEGER, "Payment amount exceeds the safe integer range");
+
+export const paymentLinkAssetSchema = z
+  .string()
+  .regex(/^[A-Z0-9]{1,12}$/, "Payment asset must be an uppercase asset code such as USDC");
+
+export const paymentLinkDestinationSchema = stellarPublicKeySchema;
+
+export const paymentLinkNetworkSchema = z
+  .string()
+  .regex(/^[a-z0-9]+:[a-z0-9-]+$/, "Payment network must be namespaced such as stellar:testnet");
+
+export const paymentLinkInputSchema = z.object({
+  amount: paymentLinkAmountSchema,
+  asset: paymentLinkAssetSchema,
+  destination: paymentLinkDestinationSchema,
+  network: paymentLinkNetworkSchema
+});
+
+export type PaymentLinkInput = z.infer<typeof paymentLinkInputSchema>;
+
 // --- Receipt export schemas ---------------------------------------------------
 //
 // These schemas describe the public-safe payload that the web client writes to a
