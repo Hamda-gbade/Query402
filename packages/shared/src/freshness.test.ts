@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   DEFAULT_TIMESTAMP_MAX_AGE_MS,
+  isExpiredTimestamp,
   isFreshTimestamp,
   isStaleTimestamp,
   parseTimestamp
@@ -28,6 +29,14 @@ describe("timestamp freshness", () => {
     expect(
       isFreshTimestamp(new Date(now - DEFAULT_TIMESTAMP_MAX_AGE_MS + 1).toISOString(), now)
     ).toBe(true);
+  });
+
+  it("treats the exact boundary as expired", () => {
+    const boundary = new Date(now - DEFAULT_TIMESTAMP_MAX_AGE_MS).toISOString();
+    expect(isExpiredTimestamp(boundary, now)).toBe(true);
+    expect(isExpiredTimestamp(new Date(now - DEFAULT_TIMESTAMP_MAX_AGE_MS + 1).toISOString(), now)).toBe(
+      false
+    );
   });
 
   it("accepts current timestamps but rejects future timestamps", () => {

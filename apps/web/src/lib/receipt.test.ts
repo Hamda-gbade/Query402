@@ -1,8 +1,10 @@
 import test, { describe } from "node:test";
 import assert from "node:assert/strict";
 import { query402ReceiptSchema } from "@query402/shared";
+import { isPaymentProofFresh } from "@query402/shared";
 import type { PaidQueryResponse, PublicPaymentEvidence } from "../types.js";
 import { buildReceipt, receiptFilename, serializeReceipt, evaluatePaymentEvidenceGate, validateReceipt } from "./receipt.js";
+import { isReceiptFresh } from "./freshness.js";
 
 function settledEvidence(overrides: Partial<PublicPaymentEvidence> = {}): PublicPaymentEvidence {
   return {
@@ -42,6 +44,8 @@ function settledResponse(overrides: Partial<PaidQueryResponse> = {}): PaidQueryR
 }
 
 const FIXED_DATE = new Date("2026-06-30T12:34:56.000Z");
+const FIXED_CLOCK = () => FIXED_DATE;
+const MAX_AGE_MS = 5 * 60 * 1000;
 
 describe("buildReceipt", () => {
   test("captures all required fields from a settled wallet response", () => {
@@ -187,6 +191,65 @@ describe("buildReceipt", () => {
     assert.equal(receipt.payment.status, null);
     assert.equal(receipt.payment.transactionHash, null);
     assert.equal(receipt.payment.network, null);
+  });
+});
+
+describe("payment proof freshness", () => {
+  test("a fresh proof is accepted by the shared helper and shown as paid", () => {
+    const response = settledResponse();
+    const proofTimestamp = "2026-06-30T12:34:00.000Z";
+
+    assert.equal(
+      isPaymentProofFresh({
+        proofTimestamp,
+        now: FIXED_CLOCK,
+        maxAgeMs: MAX_AGE_MS
+      }),
+      true
+    );
+    assert.equal(
+      isReceiptFresh({
+        proofTimestamp,
+        now: FIXED_CLOCK,
+        maxAgeMs: MAX_AGE_MS
+      }),
+      true
+    );
+    assert.equal(response.payment.evidence.status, "settled");
+  });
+
+  test("a proof at the exact boundary is rejected by both the shared helper and the web client", () => {
+    const boundaryTimestamp = new Date(FIXED_DATE.getTime() - MAX_AGE_MS).toISOString();
+
+    assert.equal(
+      isPaymentProofFresh({
+        proofTimestamp: boundaryTimestamp,
+        now: FIXED_CLOCK,
+        maxAgeMs: MAX_AGE_MS
+      }),
+      false
+    );
+    assert.equal(
+      isReceiptFresh({
+        proofTimestamp: boundaryTimestamp,
+        now: FIXED_CLOCK,
+        maxAgeMs: MAX_AGE_MS
+      }),
+      false
+    );
+  });
+
+  test("an expired proof is not shown as paid on the web fixture", () => {
+    const expiredTimestamp = new Date(FIXED_DATE.getTime() - MAX_AGE_MS - 1).toISOString();
+
+    assert.equal(
+      isReceiptFresh({
+        proofTimestamp: expiredTimestamp,
+        now: FIXED_CLOCK,
+        maxAgeMs: MAX_AGE_MS
+      }),
+      false
+    );
   });
 });
 
